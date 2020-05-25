@@ -35,7 +35,45 @@ from utils.utils import get_model_summary
 
 import dataset
 import models
+import numpy as np
+import cv2
 
+def combine_tensor_image_target(input_image, target):
+    n_b = input_image.size(0)
+
+    mean = [0.229, 0.224, 0.225]
+    std = [0.485, 0.456, 0.406]
+
+    _input_image = input_image.to('cpu')
+    _target = target.to('cpu')
+
+    for b_id in range(n_b):
+        # input image
+        _denomalized_input = _input_image[b_id] * torch.Tensor(mean).reshape(-1, 1, 1) + torch.Tensor(std).reshape(-1, 1, 1)
+        _img_input = transforms.ToPILImage()(_denomalized_input)
+        _img_input = np.asarray(_img_input)
+        _h, _w = _img_input.shape[:2]
+
+        # target
+        _target_this_batch = _target[b_id]
+        n_joints = _target_this_batch.size(0)
+
+        _img_target_this_batch = []
+        for joint in range(n_joints):
+            _target_this_batch_this_joint = _target_this_batch[joint]
+            _img_target_this_batch_this_joint = transforms.ToPILImage()(_target_this_batch_this_joint)
+            _img_target_this_batch_this_joint = np.asarray(_img_target_this_batch_this_joint)
+            __h, __w = _img_target_this_batch_this_joint.shape[:2]
+
+            _img_target_this_batch_this_joint = cv2.resize(_img_target_this_batch_this_joint, (_h, __w), interpolation=cv2.INTER_CUBIC)
+
+            _img_target_this_batch += [_img_target_this_batch_this_joint]
+
+        #
+        _img_target_this_batch = np.concatenate(_img_target_this_batch, axis=1)
+
+        #
+        return np.concatenate([_img_input, _img_target_this_batch], axis=1)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train keypoints network')
@@ -108,7 +146,7 @@ def main():
     dump_input = torch.rand(
         (1, 3, cfg.MODEL.IMAGE_SIZE[1], cfg.MODEL.IMAGE_SIZE[0])
     )
-    writer_dict['writer'].add_graph(model, (dump_input, ))
+    #writer_dict['writer'].add_graph(model, dump_input)
 
     logger.info(get_model_summary(model, dump_input))
 
@@ -142,7 +180,7 @@ def main():
         train_dataset,
         batch_size=cfg.TRAIN.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
         shuffle=cfg.TRAIN.SHUFFLE,
-        num_workers=cfg.WORKERS,
+        num_workers=0,#cfg.WORKERS,
         pin_memory=cfg.PIN_MEMORY
     )
     valid_loader = torch.utils.data.DataLoader(
