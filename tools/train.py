@@ -226,10 +226,11 @@ def main():
 
 
         # evaluate on validation set
-        perf_indicator = validate(
-            cfg, valid_loader, valid_dataset, model, criterion,
-            final_output_dir, tb_log_dir, writer_dict
-        )
+        # perf_indicator = validate(
+        #     cfg, valid_loader, valid_dataset, model, criterion,
+        #     final_output_dir, tb_log_dir, writer_dict
+        # )
+        perf_indicator = best_perf
 
         if perf_indicator >= best_perf:
             best_perf = perf_indicator

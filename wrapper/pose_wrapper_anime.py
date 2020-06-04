@@ -8,6 +8,8 @@ import sys
 import pprint
 import cv2
 
+from skimage import measure
+
 """
 Add path
 """
@@ -44,7 +46,7 @@ from utils.transforms import get_affine_transform, flip_back
 import dataset
 import models
 
-"""
+
 joint_labels = [
     'ankle_right',
     'knee_right',
@@ -84,22 +86,21 @@ joint_pair = [
     ('leg_left', 'knee_left'),
     ('leg_right', 'knee_right')
 ]
-"""
 
-joint_labels = [
-    'l eye',
-    'r eye',
-    'nose',
-    'mouth',
-    'chin'
-]
-
-joint_pair = [
-    ('l eye', 'nose'),
-    ('r eye', 'nose'),
-    ('nose', 'mouth'),
-    ('mouth', 'chin')
-]
+# joint_labels = [
+#     'l eye',
+#     'r eye',
+#     'nose',
+#     'mouth',
+#     'chin'
+# ]
+#
+# joint_pair = [
+#     ('l eye', 'nose'),
+#     ('r eye', 'nose'),
+#     ('nose', 'mouth'),
+#     ('mouth', 'chin')
+# ]
 
 # dataset dependent configuration for visualization
 coco_part_labels = [
@@ -163,6 +164,34 @@ def add_joints(image, joints, color, dataset='COCO'):
 
     return image
 
+def simple_crop_image_by_color(pil_image):
+    cv2_im = np.array(pil_image, dtype=np.int16)
+
+    b, r, g = cv2.split(cv2_im)
+
+    sc_im = b + 256 * (g + 1) + 256 * 256 * (r + 1) # single channel
+    bg_color = 0 + 256 * (0 + 1) + 256 * 256 * (0 + 1)
+
+    labels = measure.label(sc_im, neighbors=4, background=bg_color)
+    for region in measure.regionprops(labels):
+        coords = np.asarray(region['coords'])
+
+        if [5,5] in coords:
+            print('found')
+            _im = region['image'].copy().astype(np.uint8) * 255
+
+            x, y, w, h = cv2.boundingRect(np.stack(np.where(_im == 0)[::-1], axis=-1))
+            print (x, y, w, h)
+
+            sub_im = np.array(pil_image, dtype=np.uint8)[y:y+h, x:x+w, :]
+            return sub_im
+
+            # cv2.rectangle(_im, (x,y), (x + w, y + h), 127, thickness=10)
+            #
+            # imgshow(_im)
+
+    return np.asarray(pil_image)
+
 class FakedArugmentPasser:
     def __init__(self, config_path, weight_path):
         self.cfg = config_path
@@ -215,7 +244,7 @@ class PoseWrapper:
 
         """
         """
-        self.flip_pairs = [[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
+        #self.flip_pairs = [[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
 
         """
         Heatmap
@@ -230,7 +259,7 @@ class PoseWrapper:
 
         return output_image
 
-    def process_single(self, image):
+    def process_single(self, image, use_crop = True):
         """
         Args:
             image: RGB, numpy image
@@ -238,6 +267,9 @@ class PoseWrapper:
         Returns:
 
         """
+        if use_crop:
+            image = simple_crop_image_by_color(image)
+
         height, width = image.shape[:2]
 
         with torch.no_grad():
@@ -259,11 +291,11 @@ class PoseWrapper:
             # we should first convert to 0-based index
             c = c - 1
 
-            trans = get_affine_transform(c, s, r, [256,256])
+            trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE)
             input = cv2.warpAffine(
                 data_numpy,
                 trans,
-                (256, 256),
+                tuple(cfg.MODEL.IMAGE_SIZE),
                 flags=cv2.INTER_LINEAR
             )
             debug_im = input.copy()
@@ -274,29 +306,6 @@ class PoseWrapper:
                 output = outputs[-1]
             else:
                 output = outputs
-
-            if False:
-                input_flipped = np.flip(input.cpu().numpy(), 3).copy()
-                input_flipped = torch.from_numpy(input_flipped).cuda()
-                outputs_flipped = self.model(input_flipped)
-
-                if isinstance(outputs_flipped, list):
-                    output_flipped = outputs_flipped[-1]
-                else:
-                    output_flipped = outputs_flipped
-
-                output_flipped = flip_back(output_flipped.cpu().numpy(),
-                                           self.flip_pairs)
-                output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
-
-                if True:
-                    output_flipped[:, :, :, 1:] = \
-                        output_flipped.clone()[:, :, :, 0:-1]
-
-                output = (output + output_flipped) * 0.5
-
-            preds, maxvals = get_final_preds(
-                cfg, output.clone().cpu().numpy(), c, s)
 
             preds, maxvals = get_max_preds(output.clone().cpu().numpy())
 
@@ -342,11 +351,11 @@ if __name__ == '__main__':
     from PIL import Image
 
     #
-    config_path = "../experiments/hor01/hrnet/w32_256x256_adam_lr1e-3.yaml"
-    weight_path = "../tools/output_hor01_1/mpii/pose_hrnet/w32_256x256_adam_lr1e-3/model_best.pth"
+    config_path = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/geek_output/output_anime_drawing/w32_256x256_adam_lr1e-3_anime_drawing.yaml"
+    weight_path = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/geek_output/output_anime_drawing/mpii/pose_hrnet/w32_256x256_adam_lr1e-3/model_best.pth"
 
     #
-    im_fn = "/home/kan/Desktop/Cinnamon/datapile/all_data/hor02_044/color/A0002.tga"
+    im_fn = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/data/hor01/images/hor01_020_k_R2_A_r2_POSE_A0002.png"
     im = np.asarray(Image.open(im_fn))
 
     #
@@ -355,19 +364,5 @@ if __name__ == '__main__':
 
     imgshow(ou)
 
-    #
-    # in_dir  = "/home/kan/Desktop/Cinnamon/datapile/all_data/all"
-    # out_dir = 'debugs'
-    # os.makedirs(out_dir, exist_ok=True)
-    #
-    # import glob
-    # for id, im_fn in enumerate(glob.glob(os.path.join(in_dir, '*.tga'))):
-    #     print ('processing %s ...' % im_fn)
-    #
-    #     im = np.asarray(Image.open(im_fn))
-    #     ou = model.process_single(im)
-    #
-    #     ou_fn = os.path.join(out_dir, '%d.png' % (id + 1))
-    #     cv2.imwrite(ou_fn, cv2.cvtColor(ou, cv2.COLOR_BGR2RGB))
 
 

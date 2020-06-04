@@ -97,26 +97,30 @@ def process(annot_dir, output_dir):
 
     for dir in dirs:
         if '.xlsx' in dir: continue
-        if not 32 <= int(dir) <= 32: continue
+        if not 32 <= int(dir) <= 35: continue
 
         image_dir = os.path.join(annot_dir, dir, 'images')
         json_dir = os.path.join(annot_dir, dir, 'labels')
 
         im_fns = os.listdir(image_dir)
 
-        for im_fn in im_fns:
-            print('processing image %s ...' % im_fn)
+        try:
+            for im_fn in im_fns:
+                print('processing image %s ...' % im_fn)
 
-            #
-            full_im_fn = os.path.join(image_dir, im_fn)
-            full_js_fn = os.path.join(json_dir, os.path.splitext(im_fn)[0] + '.json')
+                #
+                full_im_fn = os.path.join(image_dir, im_fn)
+                full_js_fn = os.path.join(json_dir, os.path.splitext(im_fn)[0] + '.json')
 
-            #
-            assert os.path.exists(full_im_fn)
-            assert os.path.exists(full_js_fn)
+                #
+                assert os.path.exists(full_im_fn), 'doest not exist %s' % full_im_fn
+                assert os.path.exists(full_js_fn), 'doest not exist %s' % full_js_fn
 
-            #
-            process_one_dir(full_im_fn, full_js_fn, output_dir, 'valid')
+                #
+                process_one_dir(full_im_fn, full_js_fn, output_dir, 'valid')
+
+        except Exception as e:
+            print ("Exception: %s" % e)
 
 if __name__ == '__main__':
     annot_dir = "/home/kan/Desktop/Cinnamon/pose/labelKeypoint/scripts/processed_hor01"
