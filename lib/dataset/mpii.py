@@ -12,7 +12,7 @@ import logging
 import os
 import json_tricks as json
 from collections import OrderedDict
-
+import cv2
 import numpy as np
 from scipy.io import loadmat, savemat
 
@@ -21,13 +21,32 @@ from dataset.JointsDataset import JointsDataset
 
 logger = logging.getLogger(__name__)
 
+import matplotlib.pyplot as plt
+def imgshow(im):
+    plt.imshow(im)
+    plt.show()
+
+def draw_keypoints(image_path, joints_3d, joints_3d_vis):
+    cv2_image = cv2.imread(image_path)
+
+    if cv2_image is not None:
+
+        cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+        for joint_3d, join_3d_vis in zip(joints_3d, joints_3d_vis):
+            x, y = joint_3d[:2]
+            x = int(x);
+            y = int(y)
+
+            cv2.circle(cv2_image, (x, y), radius=3, color=(255, 0, 0), thickness=2)
+
+    return cv2_image
 
 class MPIIDataset(JointsDataset):
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
 
         self.num_joints = cfg.MODEL.NUM_JOINTS #5 #16
-        self.flip_pairs = cfg.DATASET.FLIP_PAIRS #[[0,1]] #[[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
+        self.flip_pairs = [[0,1]] #[[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
         self.parent_ids = [1, 2, 6, 6, 3, 4, 6, 6, 7, 8, 11, 12, 7, 7, 13, 14]
 
         self.upper_body_ids = (7, 8, 9, 10, 11, 12, 13, 14, 15)
@@ -51,18 +70,32 @@ class MPIIDataset(JointsDataset):
         gt_db = []
         for a in anno:
             image_name = a['image']
+            base_name  = os.path.splitext(image_name)[0]
+
+            is_found = False
+            for ext in ['.jpg', '.png']:
+                image_name_ = "%s%s" % (base_name, ext)
+                full_path = os.path.join(self.root, 'images', image_name_)
+                if os.path.exists(full_path):
+                    image_name = image_name_
+                    is_found = True
+                    break
+
+            if is_found == False:
+                raise Exception('can not file path for image %s ' % image_name)
 
             c = np.array(a['center'], dtype=np.float)
+            #what is scale factor used for ? Ans: scale = original_height / 200
             s = np.array([a['scale'], a['scale']], dtype=np.float)
 
             # Adjust center/scale slightly to avoid cropping limbs
-            if c[0] != -1:
-                c[1] = c[1] + 15 * s[1]
-                s = s * 1.25
+            # if c[0] != -1:
+            #     c[1] = c[1] + 15 * s[1]
+            #     s = s * 1.25
 
             # MPII uses matlab format, index is based 1,
             # we should first convert to 0-based index
-            c = c - 1
+            # c = c - 1
 
             joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
             joints_3d_vis = np.zeros((self.num_joints,  3), dtype=np.float)
@@ -77,6 +110,67 @@ class MPIIDataset(JointsDataset):
                 joints_3d[:, 0:2] = joints[:, 0:2]
                 joints_3d_vis[:, 0] = joints_vis[:]
                 joints_3d_vis[:, 1] = joints_vis[:]
+
+            # test viewing the original image
+            image_path = os.path.join(self.root, 'images', image_name)
+            if False:
+                print ('test viewing original image ...')
+                cv2_image  = draw_keypoints(image_path, joints_3d, joints_3d_vis)
+                imgshow(cv2_image)
+
+            # test flip pair
+            if False:
+                r = 0
+
+                print ('test viewing flipped image ...')
+                from .JointsDataset import fliplr_joints, get_affine_transform, affine_transform
+                self.flip_pairs = [[0, 1]]
+                data_numpy = cv2.imread(
+                    image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+                )
+
+                if self.color_rgb:
+                    data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
+
+                # data_numpy = data_numpy[:, ::-1, :]
+                # joints_3d, joints_3d_vis = fliplr_joints(
+                #     joints_3d, joints_3d_vis, data_numpy.shape[1], self.flip_pairs)
+                # c[0] = data_numpy.shape[1] - c[0] - 1
+
+                original_h, original_w = data_numpy.shape[:2]
+                scale = s #0.8 * max(np.array([original_w / 200., original_h / 200.]))
+                # use this function because it already wrap all of the augmentation
+                trans = get_affine_transform(c, scale, r, self.image_size)
+                input = cv2.warpAffine(
+                    data_numpy,
+                    trans,
+                    (int(self.image_size[0]), int(self.image_size[1])),
+                    flags=cv2.INTER_LINEAR)
+
+                # transform key-points
+                for i, (joint, joint_vis) in enumerate(zip(joints_3d, joints_3d_vis)):
+
+                    print ('joints:', joint)
+                    print ('joints_vis:', joint_vis)
+                    if joint_vis[0] > 0.0:
+                        joint_ = affine_transform(joint[0:2], trans)
+
+                        x, y = joint_
+                        x = int(x)
+                        y = int(y)
+
+                        print ('x,y coordinates:', x, y)
+                        cv2.circle(input, (x,y), radius=2, color=(255,0,0), thickness=2)
+
+                imgshow(input)
+                #
+                # vis_image = draw_keypoints(image_path, joints, joints_vis)
+                #
+                # if vis_image is None:
+                #     print('test flip fail. Image is None.')
+                #     print('image_path:', image_path, ', is exist:', os.path.exists(image_path))
+                #
+                # imgshow(vis_image)
 
             image_dir = 'images.zip@' if self.data_format == 'zip' else 'images'
             gt_db.append(

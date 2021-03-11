@@ -63,6 +63,11 @@ class JointsDataset(Dataset):
         raise NotImplementedError
 
     def half_body_transform(self, joints, joints_vis):
+        """
+        Control the upper and lower body by scale & center.
+        1. Find all the joints is in given upper/lower ids
+        2. For examples if we want to have the lower body, calculate the mean & scale of lower joints only.
+        """
         upper_joints = []
         lower_joints = []
         for joint_id in range(self.num_joints):
@@ -130,6 +135,8 @@ class JointsDataset(Dataset):
         if self.color_rgb:
             data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
 
+        #TODO: show original image here (1)
+
         if data_numpy is None:
             logger.error('=> fail to read {}'.format(image_file))
             raise ValueError('Fail to read {}'.format(image_file))
@@ -142,9 +149,21 @@ class JointsDataset(Dataset):
         score = db_rec['score'] if 'score' in db_rec else 1
         r = 0
 
+        """
+        Summary about the augmentation the repo used:
+        - Half-body transform: get lower|upper half body.
+        - Flip pair pose.
+        - Affine transform in rotate | scale | translate?.
+        """
+
+        # test flip pair
+
+
         if self.is_train:
             if (np.sum(joints_vis[:, 0]) > self.num_joints_half_body
                 and np.random.rand() < self.prob_half_body):
+
+                #TODO: please read detail this half-body transformation
                 c_half_body, s_half_body = self.half_body_transform(
                     joints, joints_vis
                 )
@@ -164,6 +183,7 @@ class JointsDataset(Dataset):
                     joints, joints_vis, data_numpy.shape[1], self.flip_pairs)
                 c[0] = data_numpy.shape[1] - c[0] - 1
 
+        #TODO: read detail affine transform here
         trans = get_affine_transform(c, s, r, self.image_size)
         input = cv2.warpAffine(
             data_numpy,
@@ -177,6 +197,8 @@ class JointsDataset(Dataset):
         for i in range(self.num_joints):
             if joints_vis[i, 0] > 0.0:
                 joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
+
+
 
         target, target_weight = self.generate_target(joints, joints_vis)
 

@@ -17,7 +17,7 @@ DATASET:
   FLIP: false
   NUM_JOINTS_HALF_BODY: 8
   PROB_HALF_BODY: -1. #0.3
-  ROOT: '../data/hor01/'
+  ROOT: "/home/kan/Desktop/data_kp/hor01_new" #'../data/hor01/'
   ROT_FACTOR: 30
   SCALE_FACTOR: 0.01
   TEST_SET: valid
@@ -26,14 +26,14 @@ MODEL:
   INIT_WEIGHTS: true
   NAME: pose_hrnet
   NUM_JOINTS: 5
-  PRETRAINED: '../models/pose_hrnet_w32_256x256.pth'
+  PRETRAINED: '/home/kan/Desktop/cinnamon/kp_estimation/keypoint_estimation/models/pose_hrnet_w32_256x256.pth'
   TARGET_TYPE: gaussian
   IMAGE_SIZE:
-  - 512
-  - 512
+  - 256
+  - 256
   HEATMAP_SIZE:
-  - 128
-  - 128
+  - 64
+  - 64
   SIGMA: 2
   EXTRA:
     PRETRAINED_LAYERS:

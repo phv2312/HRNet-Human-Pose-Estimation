@@ -62,7 +62,8 @@ def get_affine_transform(
         print(scale)
         scale = np.array([scale, scale])
 
-    scale_tmp = scale * 200.0
+    shift=np.array([0, 0], dtype=np.float32)
+    scale_tmp = scale * 200.0 # return to the original height & width
     src_w = scale_tmp[0]
     dst_w = output_size[0]
     dst_h = output_size[1]
@@ -80,6 +81,45 @@ def get_affine_transform(
 
     src[2:, :] = get_3rd_point(src[0, :], src[1, :])
     dst[2:, :] = get_3rd_point(dst[0, :], dst[1, :])
+
+    # #TODO: visualize the correspondence of source & dist
+    # org_w, org_h = scale_tmp
+    #
+    # org_h = int(org_h)
+    # org_w = int(org_w)
+    # dst_h = int(dst_h)
+    # dst_w = int(dst_w)
+    #
+    # src_image = np.ones(shape=(org_h, org_w, 3), dtype=np.uint8) * 255
+    # dst_image = np.ones(shape=(dst_h, dst_w, 3), dtype=np.uint8) * 255
+    #
+    # #
+    # max_h = max(org_h, dst_h)
+    # if max_h != org_h:
+    #     src_image = cv2.copyMakeBorder(src_image, 0, max_h - org_h, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+    # else:
+    #     dst_image = cv2.copyMakeBorder(dst_image, 0, max_h - dst_h, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+    #
+    # offset = org_w
+    # vis_image = np.concatenate([src_image, dst_image], axis=1)
+    #
+    # for _i, (src_point, dst_point) in enumerate(zip(src, dst)):
+    #     print ('pairing: src with tgt', src_point, dst_point)
+    #
+    #     sx, sy = src_point
+    #     sx = int(sx); sy = int(sy)
+    #
+    #     dx, dy = dst_point
+    #     dx = int(dx); dy = int(dy)
+    #
+    #     cv2.putText(vis_image, str(_i), (sx, sy), cv2.FONT_HERSHEY_PLAIN, 1.1, (0,255,0), 1)
+    #     cv2.circle(vis_image, (sx, sy), radius=3, color=(255,0,0), thickness=2)
+    #     cv2.circle(vis_image, (dx + offset, dy), radius=3, color=(255,0,0), thickness=2)
+    #     cv2.line(vis_image, (sx, sy), (dx + offset, dy), color=(0,0,255), thickness=2)
+    #
+    # import matplotlib.pyplot as plt
+    # plt.imshow(vis_image)
+    # plt.show()
 
     if inv:
         trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))
