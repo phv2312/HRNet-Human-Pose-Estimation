@@ -191,6 +191,10 @@ class JointsDataset(Dataset):
             (int(self.image_size[0]), int(self.image_size[1])),
             flags=cv2.INTER_LINEAR)
 
+        # import matplotlib.pyplot as plt
+        # plt.imshow(input)
+        # plt.show()
+
         if self.transform:
             input = self.transform(input)
 

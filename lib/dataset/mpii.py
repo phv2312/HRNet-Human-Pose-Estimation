@@ -46,11 +46,12 @@ class MPIIDataset(JointsDataset):
         super().__init__(cfg, root, image_set, is_train, transform)
 
         self.num_joints = cfg.MODEL.NUM_JOINTS #5 #16
-        self.flip_pairs = [[0,1]] #[[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
+        self.flip_pairs = [[14,15],[10,13],[9,12],[8,11],[4,7],[2,5],[3,6]] # specified for animeDrawing dataset
         self.parent_ids = [1, 2, 6, 6, 3, 4, 6, 6, 7, 8, 11, 12, 7, 7, 13, 14]
+        self.aspect_ratio = .6
 
-        self.upper_body_ids = (7, 8, 9, 10, 11, 12, 13, 14, 15)
-        self.lower_body_ids = (0, 1, 2, 3, 4, 5, 6)
+        self.upper_body_ids = (0,1,2,3,4,5,6,10,14,15,16,17) #(7, 8, 9, 10, 11, 12, 13, 14, 15)
+        self.lower_body_ids = (7,8,9,11,12,13) #(0, 1, 2, 3, 4, 5, 6)
 
         self.db = self._get_db()
 
@@ -89,9 +90,9 @@ class MPIIDataset(JointsDataset):
             s = np.array([a['scale'], a['scale']], dtype=np.float)
 
             # Adjust center/scale slightly to avoid cropping limbs
-            # if c[0] != -1:
-            #     c[1] = c[1] + 15 * s[1]
-            #     s = s * 1.25
+            if c[0] != -1:
+                c[1] = c[1] + 15 * s[1]
+                s = s * 1.25
 
             # MPII uses matlab format, index is based 1,
             # we should first convert to 0-based index
