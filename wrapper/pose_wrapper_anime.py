@@ -47,24 +47,27 @@ import dataset
 import models
 
 
-joint_labels = [
-    'ankle_right',
-    'knee_right',
-    'leg_right',
-    'leg_left',
-    'knee_left',
-    'ankle_left',
-    'body_upper',
-    '',
-    'neck',
-    'head',
-    'wrist_right',
-    'elbow_right',
-    'arm_right',
-    'arm_left',
-    'elbow_left',
-    'wrist_left'
-]
+joint_labels_dct = {
+    'body_1': 0,
+    'nose_1': 1,
+    'larm_1' : 2,
+    'lelbow_1': 3,
+    'lwrist_1' : 4,
+    'rarm_1': 5,
+    'relbow_1': 6,
+    'rwrist_1': 7,
+    'lleg_1': 8,
+    'lknee_1': 9,
+    'lankle_1': 10,
+    'rleg_1': 11,
+    'rknee_1' : 12,
+    'rankle_1': 13,
+    'leye_1': 14,
+    'reye_1': 15,
+    'chin_1': 16,
+    'mouth_1': 17,
+}
+joint_labels = list(joint_labels_dct.keys())
 
 joint_pair = [
     ('neck', 'head'),
@@ -86,21 +89,6 @@ joint_pair = [
     ('leg_left', 'knee_left'),
     ('leg_right', 'knee_right')
 ]
-
-# joint_labels = [
-#     'l eye',
-#     'r eye',
-#     'nose',
-#     'mouth',
-#     'chin'
-# ]
-#
-# joint_pair = [
-#     ('l eye', 'nose'),
-#     ('r eye', 'nose'),
-#     ('nose', 'mouth'),
-#     ('mouth', 'chin')
-# ]
 
 # dataset dependent configuration for visualization
 coco_part_labels = [
@@ -259,7 +247,7 @@ class PoseWrapper:
 
         return output_image
 
-    def process_single(self, image, use_crop = True):
+    def process_single(self, image, use_crop = False):
         """
         Args:
             image: RGB, numpy image
@@ -289,7 +277,7 @@ class PoseWrapper:
 
             # MPII uses matlab format, index is based 1,
             # we should first convert to 0-based index
-            c = c - 1
+            # c = c - 1
 
             trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE)
             input = cv2.warpAffine(
@@ -298,6 +286,37 @@ class PoseWrapper:
                 tuple(cfg.MODEL.IMAGE_SIZE),
                 flags=cv2.INTER_LINEAR
             )
+            inp_h, inp_w = input.shape[:2]
+
+            # here
+
+            fixed_coord_Q = np.array([[250, 250, 0]])
+            trans_ = np.concatenate([trans, [[0,0,1]]], axis=0)
+            fixed_coord_P = fixed_coord_Q @ np.linalg.inv(trans_)
+
+            print ('P:', fixed_coord_P)
+            print ('Q:', fixed_coord_Q)
+
+            print ('original image')
+            # x = int(fixed_coord_P[0][0])
+            # y = int(fixed_coord_P[0][1])
+            # cv2.circle(data_numpy, (x,y), radius=3, color=(0,255,0), thickness=2)
+            # imgshow(data_numpy)
+
+            print ('image after applying affine transform')
+            # x = int(fixed_coord_Q[0][0])
+            # y = int(fixed_coord_Q[0][1])
+            # cv2.circle(input, (x, y), radius=3, color=(0, 255, 0), thickness=2)
+            # imgshow(input)
+
+            print ('image after applying inverse affine transform')
+            org_h, org_w = data_numpy.shape[:2]
+            #s = np.array([org_w/inp_w, org_h/inp_h])
+            inv_trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE, inv=1)
+            
+            input_tmp = cv2.warpAffine(input, inv_trans, (org_w, org_h), flags=cv2.INTER_LINEAR)
+            imgshow(input_tmp)
+
             debug_im = input.copy()
 
             input = self.transforms(input).unsqueeze(0).cuda()
@@ -329,7 +348,7 @@ class PoseWrapper:
 
             # draw single circle point
             for k, point in result_points.items():
-                cv2.circle(debug_im, point, radius=1, color=(0, 255, 0), thickness=1)
+                cv2.circle(debug_im, point, radius=2, color=(0, 255, 0), thickness=2)
 
             # draw pair
             for p1_lbl, p2_lbl in joint_pair:
@@ -351,11 +370,11 @@ if __name__ == '__main__':
     from PIL import Image
 
     #
-    config_path = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/geek_output/output_anime_drawing/w32_256x256_adam_lr1e-3_anime_drawing.yaml"
-    weight_path = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/geek_output/output_anime_drawing/mpii/pose_hrnet/w32_256x256_adam_lr1e-3/model_best.pth"
+    config_path = "/home/kan/Desktop/cinnamon/kp_estimation/keypoint_estimation/experiments/hor01/hrnet/w48_384x288_adam_lr1e-3.yaml"
+    weight_path = "/home/kan/Desktop/output_anime_drawing/mpii/pose_hrnet/w48/final_state.pth"
 
     #
-    im_fn = "/home/kan/Desktop/Cinnamon/pose/github/HRNet-Human-Pose-Estimation/data/hor01/images/hor01_020_k_R2_A_r2_POSE_A0002.png"
+    im_fn = "/home/kan/Desktop/data_kp/anime_drawing/raw_16points/AnimeDrawingsDataset/data/images/16189.jpg"
     im = np.asarray(Image.open(im_fn))
 
     #
