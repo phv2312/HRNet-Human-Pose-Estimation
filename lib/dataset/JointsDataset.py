@@ -21,7 +21,7 @@ from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
 
-from lib.augment.tps.tps_warp import TPSTransform
+from augment.tps.tps_warp import TPSTransform
 
 logger = logging.getLogger(__name__)
 
