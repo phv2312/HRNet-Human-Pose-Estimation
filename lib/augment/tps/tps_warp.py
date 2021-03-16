@@ -68,19 +68,21 @@ def find_correspondence_vertex(point_loc, org_mask, dst_mask):
     x = int(x); y = int(y)
 
     org_b, org_g, org_r = org_mask[:,:,0], org_mask[:,:,1], org_mask[:,:,2]
-    org_single_mask = org_b * 255 * 255 + org_g * 255 + org_r
+    org_single_mask = org_b.astype(np.int64) * 255 * 255 + org_g.astype(np.int64) * 255 + org_r.astype(np.int64)
 
     dst_b, dst_g, dst_r = dst_mask[:,:,0], dst_mask[:,:,1], dst_mask[:,:,2]
-    dst_single_mask = dst_b * 255 * 255 + dst_g * 255 + dst_r
+    dst_single_mask = dst_b.astype(np.int64) * 255 * 255 + dst_g.astype(np.int64) * 255 + dst_r.astype(np.int64)
 
     org_color = org_single_mask[y,x]
     new_ys, new_xs =  np.where(dst_single_mask == org_color)
 
     n_point = len(new_ys)
-    assert n_point > 0, 'n_point is <= 0'
-    new_point_loc = tuple([new_xs[n_point//2], new_ys[n_point//2]])
-
-    return new_point_loc
+    if n_point <= 0:
+        print ('can not find correspondence key-points for loc.(x-%d,y-%d)' % (x, y))
+        return tuple([-1., -1.])
+    else:
+        new_point_loc = tuple([new_xs[n_point//2], new_ys[n_point//2]])
+        return new_point_loc
 
 class TPSTransform(CoreTransform):
     def __init__(self, version):
@@ -114,7 +116,7 @@ class TPSTransform(CoreTransform):
             x = int(x)
             y = int(y)
             mask[y, x] = [g_id, g_id, g_id]
-            cv2.circle(mask, (x,y), radius=3, color=(g_id, g_id, g_id), thickness=3)
+            cv2.circle(mask, (x,y), radius=2, color=(g_id, g_id, g_id), thickness=2)
 
             g_id += 1
 

@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
+from copy import deepcopy
 from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
@@ -169,12 +169,14 @@ class JointsDataset(Dataset):
         use_augment_name = ''
         if random.uniform(0, 1.) < self.tps_prob:
             tps_transform = TPSTransform(version='tps')
-            tps_transform.set_random_parameters(input_image=data_numpy, points_per_dim=self.tps_params['points_per_dim'],
+            tps_transform.set_random_parameters(input_image=data_numpy.copy(), points_per_dim=self.tps_params['points_per_dim'],
                                                 scale_factor=self.tps_params['scale_factor'])
             use_augment_name = 'tps'
 
-            input = tps_transform.transform_image(input_image=data_numpy, output_size=self.image_size,
+            input = tps_transform.transform_image(input_image=data_numpy.copy(), output_size=self.image_size,
                                                   interpolation_mode='linear')
+
+            joints_saved = deepcopy(joints)
             for i in range(self.num_joints):
                 if joints_vis[i, 0] > 0.0:
                     joint = joints[i]
@@ -182,10 +184,14 @@ class JointsDataset(Dataset):
                                                                   input_image=data_numpy,
                                                                   output_size=self.image_size,
                                                                   interpolation_mode='nearest')
-
                     joints[i, 0:2] = joint_[0]
+                    if joint_[0][0] == -1 and joint_[0][1] == -1:
+                        print ('try to augment with tps but can not find correspondence in some key-points. So ignore')
+                        use_augment_name = ''
+                        joints = joints_saved
+                        break
 
-            if False:
+            if False and use_augment_name == 'tps':
                 # visualize here
                 vis_org_image = data_numpy.copy()
                 vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))
