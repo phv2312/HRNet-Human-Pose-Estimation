@@ -15,7 +15,7 @@ from collections import OrderedDict
 import cv2
 import numpy as np
 from scipy.io import loadmat, savemat
-
+import random
 from dataset.JointsDataset import JointsDataset
 
 
@@ -45,13 +45,13 @@ class MPIIDataset(JointsDataset):
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
 
-        self.num_joints = cfg.MODEL.NUM_JOINTS #5 #16
+        self.num_joints = cfg.MODEL.NUM_JOINTS
         self.flip_pairs = [[14,15],[10,13],[9,12],[8,11],[4,7],[2,5],[3,6]] # specified for animeDrawing dataset
         self.parent_ids = [1, 2, 6, 6, 3, 4, 6, 6, 7, 8, 11, 12, 7, 7, 13, 14]
-        self.aspect_ratio = .6
+        self.aspect_ratio = .4 # don't care
 
-        self.upper_body_ids = (0,1,2,3,4,5,6,10,14,15,16,17) #(7, 8, 9, 10, 11, 12, 13, 14, 15)
-        self.lower_body_ids = (7,8,9,11,12,13) #(0, 1, 2, 3, 4, 5, 6)
+        self.upper_body_ids = (0,1,2,3,4,5,6,10,14,15,16,17)
+        self.lower_body_ids = (7,8,9,11,12,13)
 
         self.db = self._get_db()
 
@@ -120,6 +120,116 @@ class MPIIDataset(JointsDataset):
                 cv2_image  = draw_keypoints(image_path, joints_3d, joints_3d_vis)
                 imgshow(cv2_image)
 
+            if False:
+                print ('test new transformation')
+                from lib.augment.affine.affine_warp import AffineTransform
+                from lib.augment.tps.tps_warp import TPSTransform
+
+                # initialize image
+                data_numpy = cv2.imread(
+                    image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+                )
+
+                if self.color_rgb:
+                    data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
+
+                # set up parameter for augment
+                use_augment = 'tps'
+                transform_model = None
+                if random.uniform(0, 1.) < self.tps_prob:
+                    use_augment = 'tps'
+                    transform_model = TPSTransform(version='tps')
+                    transform_model.set_random_parameters(input_image=data_numpy,
+                                                          points_per_dim=self.tps_params['points_per_dim'],
+                                                          scale_factor=self.tps_params['scale_factor'])
+
+
+
+                else:
+                    use_augment = 'affine'
+                    transform_model = AffineTransform(version='affine')
+                    transform_model.set_random_parameters(output_size=self.image_size, c=c, s=s, r=0.)
+
+                #print ('run transform:', use_augment)
+                out_image = transform_model.transform_image(input_image=data_numpy, output_size=self.image_size, interpolation_mode='linear')
+
+                # transform key-points
+                for i, (joint, joint_vis) in enumerate(zip(joints_3d, joints_3d_vis)):
+                    #print('joints:', joint)
+                    #print('joints_vis:', joint_vis)
+                    if joint_vis[0] > 0.0:
+                        joint_ = transform_model.transform_coordinate(xy_coords=[joint[0:2].tolist()], input_image=data_numpy,
+                                                                      output_size=self.image_size, interpolation_mode='nearest') #affine_transform(joint[0:2], trans)
+
+                        x, y = joint_[0]
+                        x = int(x)
+                        y = int(y)
+
+                        #print('x,y coordinates:', x, y)
+                        cv2.circle(out_image, (x, y), radius=2, color=(255, 0, 0), thickness=2)
+
+                #
+                vis_org_image = data_numpy.copy()
+                vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))
+                imgshow(np.concatenate([vis_org_image, out_image], axis=1))
+
+
+
+            # test half-body transform
+            if False:
+                print ('test half-body transform.')
+                from .JointsDataset import fliplr_joints, get_affine_transform, affine_transform
+
+                data_numpy = cv2.imread(
+                    image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+                )
+
+                if self.color_rgb:
+                    data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
+
+                joints = joints_3d
+                joints_vis = joints_3d_vis
+                c_half_body, s_half_body = self.half_body_transform(
+                    joints, joints_vis
+                )
+
+                if c_half_body is not None and s_half_body is not None:
+                    c, s = c_half_body, s_half_body
+
+                sf = self.scale_factor
+                rf = self.rotation_factor
+                r = 0.
+                # s = s * np.clip(np.random.randn() * sf + 1, 1 - sf, 1 + sf)
+                # r = np.clip(np.random.randn() * rf, -rf * 2, rf * 2) \
+                #     if random.random() <= 0.6 else 0
+
+                trans = get_affine_transform(c, s, r, self.image_size)
+                input = cv2.warpAffine(
+                    data_numpy,
+                    trans,
+                    (int(self.image_size[0]), int(self.image_size[1])),
+                    flags=cv2.INTER_LINEAR)
+
+                # transform key-points
+                for i, (joint, joint_vis) in enumerate(zip(joints_3d, joints_3d_vis)):
+                    print('joints:', joint)
+                    print('joints_vis:', joint_vis)
+                    if joint_vis[0] > 0.0:
+                        joint_ = affine_transform(joint[0:2], trans)
+
+                        x, y = joint_
+                        x = int(x)
+                        y = int(y)
+
+                        print('x,y coordinates:', x, y)
+                        cv2.circle(input, (x, y), radius=2, color=(255, 0, 0), thickness=2)
+
+                c_joint_ = affine_transform(c_half_body, trans)
+                x, y = c_joint_; x = int(x); y = int(y)
+                cv2.circle(input, (x, y), radius=10, color=(255, 0, 255), thickness=8)
+
+                imgshow(input)
+
             # test flip pair
             if False:
                 r = 0
@@ -134,15 +244,10 @@ class MPIIDataset(JointsDataset):
                 if self.color_rgb:
                     data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
 
-                # data_numpy = data_numpy[:, ::-1, :]
-                # joints_3d, joints_3d_vis = fliplr_joints(
-                #     joints_3d, joints_3d_vis, data_numpy.shape[1], self.flip_pairs)
-                # c[0] = data_numpy.shape[1] - c[0] - 1
-
                 original_h, original_w = data_numpy.shape[:2]
-                scale = s #0.8 * max(np.array([original_w / 200., original_h / 200.]))
                 # use this function because it already wrap all of the augmentation
-                trans = get_affine_transform(c, scale, r, self.image_size)
+
+                trans = get_affine_transform(c, s, r, self.image_size)
                 input = cv2.warpAffine(
                     data_numpy,
                     trans,
@@ -151,7 +256,6 @@ class MPIIDataset(JointsDataset):
 
                 # transform key-points
                 for i, (joint, joint_vis) in enumerate(zip(joints_3d, joints_3d_vis)):
-
                     print ('joints:', joint)
                     print ('joints_vis:', joint_vis)
                     if joint_vis[0] > 0.0:
@@ -165,14 +269,6 @@ class MPIIDataset(JointsDataset):
                         cv2.circle(input, (x,y), radius=2, color=(255,0,0), thickness=2)
 
                 imgshow(input)
-                #
-                # vis_image = draw_keypoints(image_path, joints, joints_vis)
-                #
-                # if vis_image is None:
-                #     print('test flip fail. Image is None.')
-                #     print('image_path:', image_path, ', is exist:', os.path.exists(image_path))
-                #
-                # imgshow(vis_image)
 
             image_dir = 'images.zip@' if self.data_format == 'zip' else 'images'
             gt_db.append(
@@ -275,3 +371,5 @@ class MPIIDataset(JointsDataset):
         name_value = OrderedDict(name_value)
 
         return name_value, name_value['Mean']
+
+

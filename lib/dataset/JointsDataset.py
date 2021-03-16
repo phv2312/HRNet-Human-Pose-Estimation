@@ -21,6 +21,7 @@ from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
 
+from lib.augment.tps.tps_warp import TPSTransform
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,12 @@ class JointsDataset(Dataset):
         self.sigma = cfg.MODEL.SIGMA
         self.use_different_joints_weight = cfg.LOSS.USE_DIFFERENT_JOINTS_WEIGHT
         self.joints_weight = 1
+
+        self.tps_params = {
+            'points_per_dim': cfg.DATASET.TPS_POINTS_PER_DIM,
+            'scale_factor': cfg.DATASET.TPS_SCALE_FACTOR
+        }
+        self.tps_prob = cfg.DATASET.TPS_PROB
 
         self.transform = transform
         self.db = []
@@ -95,11 +102,13 @@ class JointsDataset(Dataset):
         w = right_bottom[0] - left_top[0]
         h = right_bottom[1] - left_top[1]
 
-        if w > self.aspect_ratio * h:
-            h = w * 1.0 / self.aspect_ratio
-        elif w < self.aspect_ratio * h:
-            w = h * self.aspect_ratio
+        # no need ?
+        # if w > self.aspect_ratio * h:
+        #     h = w * 1.0 / self.aspect_ratio
+        # elif w < self.aspect_ratio * h:
+        #     w = h * self.aspect_ratio
 
+        # because affine transform need that set-up
         scale = np.array(
             [
                 w * 1.0 / self.pixel_std,
@@ -151,58 +160,88 @@ class JointsDataset(Dataset):
 
         """
         Summary about the augmentation the repo used:
+        - TPS
         - Half-body transform: get lower|upper half body.
         - Flip pair pose.
         - Affine transform in rotate | scale | translate?.
         """
 
-        # test flip pair
+        use_augment_name = ''
+        if random.uniform(0, 1.) < self.tps_prob:
+            tps_transform = TPSTransform(version='tps')
+            tps_transform.set_random_parameters(input_image=data_numpy, points_per_dim=self.tps_params['points_per_dim'],
+                                                scale_factor=self.tps_params['scale_factor'])
+            use_augment_name = 'tps'
 
+            input = tps_transform.transform_image(input_image=data_numpy, output_size=self.image_size,
+                                                  interpolation_mode='linear')
+            for i in range(self.num_joints):
+                if joints_vis[i, 0] > 0.0:
+                    joint = joints[i]
+                    joint_ = tps_transform.transform_coordinate(xy_coords=[joint[0:2].tolist()],
+                                                                  input_image=data_numpy,
+                                                                  output_size=self.image_size,
+                                                                  interpolation_mode='nearest')
 
-        if self.is_train:
-            if (np.sum(joints_vis[:, 0]) > self.num_joints_half_body
-                and np.random.rand() < self.prob_half_body):
+                    joints[i, 0:2] = joint_[0]
 
-                #TODO: please read detail this half-body transformation
-                c_half_body, s_half_body = self.half_body_transform(
-                    joints, joints_vis
-                )
+            if False:
+                # visualize here
+                vis_org_image = data_numpy.copy()
+                vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))
+                vis_out_image = input.copy()
+                for i in range(self.num_joints):
+                    if joints_vis[i, 0] > 0.0:
+                        x, y = joints[i, 0:2]
+                        x = int(x); y = int(y);
+                        cv2.circle(vis_out_image, (x, y), radius=2, color=(255, 0, 0), thickness=2)
+                concat_image = np.concatenate([vis_org_image, vis_out_image], axis=1)
 
-                if c_half_body is not None and s_half_body is not None:
-                    c, s = c_half_body, s_half_body
+                import matplotlib.pyplot as plt
+                plt.imshow(concat_image); plt.show()
 
-            sf = self.scale_factor
-            rf = self.rotation_factor
-            s = s * np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf)
-            r = np.clip(np.random.randn()*rf, -rf*2, rf*2) \
-                if random.random() <= 0.6 else 0
+            if self.transform:
+                input = self.transform(input)
 
-            if self.flip and random.random() <= 0.5:
-                data_numpy = data_numpy[:, ::-1, :]
-                joints, joints_vis = fliplr_joints(
-                    joints, joints_vis, data_numpy.shape[1], self.flip_pairs)
-                c[0] = data_numpy.shape[1] - c[0] - 1
+        if use_augment_name != 'tps':
+            if self.is_train:
+                if (np.sum(joints_vis[:, 0]) > self.num_joints_half_body
+                    and np.random.rand() < self.prob_half_body):
 
-        #TODO: read detail affine transform here
-        trans = get_affine_transform(c, s, r, self.image_size)
-        input = cv2.warpAffine(
-            data_numpy,
-            trans,
-            (int(self.image_size[0]), int(self.image_size[1])),
-            flags=cv2.INTER_LINEAR)
+                    # please read detail this half-body transformation -> Done
+                    c_half_body, s_half_body = self.half_body_transform(
+                        joints, joints_vis
+                    )
 
-        # import matplotlib.pyplot as plt
-        # plt.imshow(input)
-        # plt.show()
+                    if c_half_body is not None and s_half_body is not None:
+                        c, s = c_half_body, s_half_body
 
-        if self.transform:
-            input = self.transform(input)
+                sf = self.scale_factor
+                rf = self.rotation_factor
+                s = s * np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf)
+                r = np.clip(np.random.randn()*rf, -rf*2, rf*2) \
+                    if random.random() <= 0.6 else 0
 
-        for i in range(self.num_joints):
-            if joints_vis[i, 0] > 0.0:
-                joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
+                if self.flip and random.random() <= 0.5:
+                    data_numpy = data_numpy[:, ::-1, :]
+                    joints, joints_vis = fliplr_joints(
+                        joints, joints_vis, data_numpy.shape[1], self.flip_pairs)
+                    c[0] = data_numpy.shape[1] - c[0] - 1
 
+            # read detail affine transform here -> Done
+            trans = get_affine_transform(c, s, r, self.image_size)
+            input = cv2.warpAffine(
+                data_numpy,
+                trans,
+                (int(self.image_size[0]), int(self.image_size[1])),
+                flags=cv2.INTER_LINEAR)
 
+            if self.transform:
+                input = self.transform(input)
+
+            for i in range(self.num_joints):
+                if joints_vis[i, 0] > 0.0:
+                    joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
         target, target_weight = self.generate_target(joints, joints_vis)
 

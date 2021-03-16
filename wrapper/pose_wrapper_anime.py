@@ -41,53 +41,39 @@ from config import update_config
 from core.loss import JointsMSELoss
 from core.function import validate
 from utils.utils import create_logger
-from utils.transforms import get_affine_transform, flip_back
+from utils.transforms import get_affine_transform, flip_back, affine_transform
 
 import dataset
 import models
 
 
 joint_labels_dct = {
-    'body_1': 0,
-    'nose_1': 1,
-    'larm_1' : 2,
-    'lelbow_1': 3,
-    'lwrist_1' : 4,
-    'rarm_1': 5,
-    'relbow_1': 6,
-    'rwrist_1': 7,
-    'lleg_1': 8,
-    'lknee_1': 9,
-    'lankle_1': 10,
-    'rleg_1': 11,
-    'rknee_1' : 12,
-    'rankle_1': 13,
-    'leye_1': 14,
-    'reye_1': 15,
-    'chin_1': 16,
-    'mouth_1': 17,
+    'body': 0,
+    'nose': 1,
+    'larm' : 2,
+    'lelbow': 3,
+    'lwrist' : 4,
+    'rarm': 5,
+    'relbow': 6,
+    'rwrist': 7,
+    'lleg': 8,
+    'lknee': 9,
+    'lankle': 10,
+    'rleg': 11,
+    'rknee' : 12,
+    'rankle': 13,
+    'leye': 14,
+    'reye': 15,
+    'chin': 16,
+    'mouth': 17,
 }
 joint_labels = list(joint_labels_dct.keys())
 
 joint_pair = [
-    ('neck', 'head'),
-    ('body_upper', 'neck'),
-    ('neck', 'arm_left'),
-    ('neck', 'arm_right'),
-    ('body_upper', 'leg_left'),
-    ('body_upper', 'leg_right'),
-
-    ('elbow_left', 'wrist_left'),
-    ('elbow_right', 'wrist_right'),
-
-    ('elbow_left', 'arm_left'),
-    ('elbow_right', 'arm_right'),
-
-    ('ankle_left', 'knee_left'),
-    ('ankle_right', 'knee_right'),
-
-    ('leg_left', 'knee_left'),
-    ('leg_right', 'knee_right')
+    ('reye', 'nose'), ('leye', 'nose'), ('nose', 'mouth'), ('mouth', 'chin'),
+    ('chin', 'body'),
+    ('body', 'larm'), ('body', 'rarm'), ('larm', 'lelbow'), ('rarm', 'relbow'), ('lelbow', 'lwrist'), ('relbow', 'rwrist'),
+    ('body', 'lleg'), ('body', 'rleg'), ('lleg', 'lknee'), ('rleg', 'rknee'), ('lknee', 'lankle'), ('rknee', 'rankle')
 ]
 
 # dataset dependent configuration for visualization
@@ -261,14 +247,14 @@ class PoseWrapper:
         height, width = image.shape[:2]
 
         with torch.no_grad():
-            data_numpy = image #cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            data_numpy = image
 
             c = [width / 2, height / 2]
             s = height / 200.
             r = 0
 
             c = np.array(c, dtype=np.float)
-            s = np.array([s, s], dtype=np.float)
+            s = np.array([width/200., height/200.], dtype=np.float)
 
             # Adjust center/scale slightly to avoid cropping limbs
             if c[0] != -1:
@@ -280,44 +266,18 @@ class PoseWrapper:
             # c = c - 1
 
             trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE)
+            inv_trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE, inv=1)
             input = cv2.warpAffine(
                 data_numpy,
                 trans,
                 tuple(cfg.MODEL.IMAGE_SIZE),
                 flags=cv2.INTER_LINEAR
             )
-            inp_h, inp_w = input.shape[:2]
-
-            # here
-
-            fixed_coord_Q = np.array([[250, 250, 0]])
-            trans_ = np.concatenate([trans, [[0,0,1]]], axis=0)
-            fixed_coord_P = fixed_coord_Q @ np.linalg.inv(trans_)
-
-            print ('P:', fixed_coord_P)
-            print ('Q:', fixed_coord_Q)
-
-            print ('original image')
-            # x = int(fixed_coord_P[0][0])
-            # y = int(fixed_coord_P[0][1])
-            # cv2.circle(data_numpy, (x,y), radius=3, color=(0,255,0), thickness=2)
-            # imgshow(data_numpy)
-
-            print ('image after applying affine transform')
-            # x = int(fixed_coord_Q[0][0])
-            # y = int(fixed_coord_Q[0][1])
-            # cv2.circle(input, (x, y), radius=3, color=(0, 255, 0), thickness=2)
-            # imgshow(input)
 
             print ('image after applying inverse affine transform')
             org_h, org_w = data_numpy.shape[:2]
-            #s = np.array([org_w/inp_w, org_h/inp_h])
-            inv_trans = get_affine_transform(c, s, r, cfg.MODEL.IMAGE_SIZE, inv=1)
             
             input_tmp = cv2.warpAffine(input, inv_trans, (org_w, org_h), flags=cv2.INTER_LINEAR)
-            imgshow(input_tmp)
-
-            debug_im = input.copy()
 
             input = self.transforms(input).unsqueeze(0).cuda()
             outputs = self.model(input)
@@ -325,6 +285,31 @@ class PoseWrapper:
                 output = outputs[-1]
             else:
                 output = outputs
+
+            FLIP_TEST = True
+            SHIFT_HEATMAP = True
+            flip_pairs = [[14, 15], [10, 13], [9, 12], [8, 11], [4, 7], [2, 5], [3, 6]]
+            if FLIP_TEST:
+                # this part is ugly, because pytorch has not supported negative index
+                # input_flipped = model(input[:, :, :, ::-1])
+                input_flipped = np.flip(input.cpu().numpy(), 3).copy()
+                input_flipped = torch.from_numpy(input_flipped).cuda()
+                outputs_flipped = self.model(input_flipped)
+
+                if isinstance(outputs_flipped, list):
+                    output_flipped = outputs_flipped[-1]
+                else:
+                    output_flipped = outputs_flipped
+
+                output_flipped = flip_back(output_flipped.cpu().numpy(), flip_pairs)
+                output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
+
+                # feature is not aligned, shift flipped heatmap for higher accuracy
+                if SHIFT_HEATMAP:
+                    output_flipped[:, :, :, 1:] = \
+                        output_flipped.clone()[:, :, :, 0:-1]
+
+                output = (output + output_flipped) * 0.5
 
             preds, maxvals = get_max_preds(output.clone().cpu().numpy())
 
@@ -335,27 +320,30 @@ class PoseWrapper:
             for idx, ((x, y), maxval) in enumerate(zip(preds, maxvals)):
 
                 print ('coor (x,y):', (x, y), ' maxval:', maxval, 'cls:', joint_labels[idx])
-                if maxval < 0.25: continue
+                if maxval < 0.5: continue
 
                 x = int(x * 4)
                 y = int(y * 4)
 
-                result_points[joint_labels[idx]] = (x,y)
+                new_point = affine_transform(np.array([x,y]), inv_trans)
+                new_point = tuple(new_point.astype(np.int).tolist())
 
-                #
-                # cv2.putText(debug_im, joint_labels[idx], (x,y - 2), cv2.FONT_HERSHEY_COMPLEX_SMALL, .4, (255,0,0), thickness=1)
-                # cv2.circle(debug_im, (x, y), radius=3, color=(0,255,0), thickness=1)
+                result_points[joint_labels[idx]] = new_point
 
             # draw single circle point
+            debug_im = image.copy()
+            radius = width // 230
+            thickness = radius
             for k, point in result_points.items():
-                cv2.circle(debug_im, point, radius=2, color=(0, 255, 0), thickness=2)
+                cv2.circle(debug_im, point, radius=radius, color=(0, 255, 0), thickness=thickness)
 
             # draw pair
             for p1_lbl, p2_lbl in joint_pair:
                 if p1_lbl in result_points and p2_lbl in result_points:
-                    cv2.line(debug_im, result_points[p1_lbl], result_points[p2_lbl], (255,0,0), thickness=1)
+                    print ('draw line btw:', p1_lbl, p2_lbl)
+                    cv2.line(debug_im, result_points[p1_lbl], result_points[p2_lbl], (255,255,0), thickness=thickness)
 
-            #imgshow(debug_im)
+                    #imgshow(debug_im)
 
         return debug_im
 
@@ -371,17 +359,37 @@ if __name__ == '__main__':
 
     #
     config_path = "/home/kan/Desktop/cinnamon/kp_estimation/keypoint_estimation/experiments/hor01/hrnet/w48_384x288_adam_lr1e-3.yaml"
-    weight_path = "/home/kan/Desktop/output_anime_drawing/mpii/pose_hrnet/w48/final_state.pth"
+    weight_path = "/home/kan/Desktop/final_state.pth"
 
     #
-    im_fn = "/home/kan/Desktop/data_kp/anime_drawing/raw_16points/AnimeDrawingsDataset/data/images/16189.jpg"
+    im_fn = "/home/kan/data/geek_data/PD/PD15_132_R_k_a_R/color/a0001.tga"
     im = np.asarray(Image.open(im_fn))
 
     #
     model = PoseWrapper(config_path, weight_path, use_gpu=True)
-    ou = model.process_single(im)
+    # ou = model.process_single(im)
+    #
+    # imgshow(ou)
+    # exit()
 
-    imgshow(ou)
+    import glob
+    count = 1
+    for image_path in glob.glob("/home/kan/Desktop/ffffff-ezgif-4-ca95f553c7f4-gif-jpg/*.jpg"):
+        print (count)
+
+        # if count != 23:
+        #     count += 1
+        #     continue
+
+        im = np.asarray(Image.open(image_path))
+        ou = model.process_single(im)
+
+        ou = cv2.cvtColor(ou, cv2.COLOR_BGR2RGB)
+        cv2.imwrite("%d.png" % count, ou)
+
+        count += 1
+
+    #imgshow(ou)
 
 
 
