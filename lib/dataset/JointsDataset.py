@@ -11,7 +11,10 @@ from __future__ import print_function
 import copy
 import logging
 import random
+from datetime import datetime
+import _pickle as cPickle
 
+import os
 import cv2
 import numpy as np
 import torch
@@ -24,7 +27,6 @@ from utils.transforms import fliplr_joints
 from augment.tps.tps_warp import TPSTransform
 
 logger = logging.getLogger(__name__)
-
 
 class JointsDataset(Dataset):
     def __init__(self, cfg, root, image_set, is_train, transform=None):
@@ -59,6 +61,8 @@ class JointsDataset(Dataset):
             'scale_factor': cfg.DATASET.TPS_SCALE_FACTOR
         }
         self.tps_prob = cfg.DATASET.TPS_PROB
+        self.tps_debug_dir = cfg.DATASET.TPS_DEBUG_DIR # for error tps only
+        os.makedirs(self.tps_debug_dir, exist_ok=True)
 
         self.transform = transform
         self.db = []
@@ -101,12 +105,6 @@ class JointsDataset(Dataset):
 
         w = right_bottom[0] - left_top[0]
         h = right_bottom[1] - left_top[1]
-
-        # no need ?
-        # if w > self.aspect_ratio * h:
-        #     h = w * 1.0 / self.aspect_ratio
-        # elif w < self.aspect_ratio * h:
-        #     w = h * self.aspect_ratio
 
         # because affine transform need that set-up
         scale = np.array(
@@ -186,12 +184,19 @@ class JointsDataset(Dataset):
                                                                   interpolation_mode='nearest')
                     joints[i, 0:2] = joint_[0]
                     if joint_[0][0] == -1 and joint_[0][1] == -1:
-                        print ('try to augment with tps but can not find correspondence in some key-points. So ignore')
+                        error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+                        error_data = {
+                            'params': tps_transform.get_random_parameters(),
+                            'data_numpy': data_numpy
+                        }
+                        cPickle.dump(error_data, open(error_data_path, mode='wb'))
+                        print('bug in TPS >>> saved in %s ...' % error_data_path)
+
                         use_augment_name = ''
                         joints = joints_saved
                         break
 
-            if False and use_augment_name == 'tps':
+            if True and use_augment_name == 'tps':
                 # visualize here
                 vis_org_image = data_numpy.copy()
                 vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))

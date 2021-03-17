@@ -336,6 +336,8 @@ class PoseWrapper:
             thickness = radius
             for k, point in result_points.items():
                 cv2.circle(debug_im, point, radius=radius, color=(0, 255, 0), thickness=thickness)
+                x, y = point
+
 
             # draw pair
             for p1_lbl, p2_lbl in joint_pair:
@@ -343,9 +345,7 @@ class PoseWrapper:
                     print ('draw line btw:', p1_lbl, p2_lbl)
                     cv2.line(debug_im, result_points[p1_lbl], result_points[p2_lbl], (255,255,0), thickness=thickness)
 
-                    #imgshow(debug_im)
-
-        return debug_im
+        return debug_im, result_points
 
 import matplotlib.pyplot as plt
 import time
@@ -353,13 +353,56 @@ def imgshow(im):
     plt.imshow(im)
     plt.show()
 
+def _conduct_label_json(pose_results, image_path):
+    json_data = {
+        'shapes': [],
+        'imagePath': image_path,
+        'bounding_box': {
+            'x': 1,
+            'y': 1,
+            'w': 2,
+            'h': 2
+        }
+    }
+    shapes_pointer = json_data['shapes']
+
+    for pose_name, pose_loc in pose_results.items():
+        x, y = pose_loc
+        shape_info = {
+            'label': '%s_1' % pose_name,
+            'points': [[x,y]]
+        }
+        shapes_pointer += [shape_info]
+
+    return json_data
+
+import json
+def prepare_label_labelme(input_dir, output_dir, pose_model):
+    os.makedirs(output_dir, exist_ok=True)
+
+    for path in glob.glob(os.path.join(input_dir, '*.png')):
+        print ('processing path: %s ...' % path)
+
+        im = np.asarray(Image.open(image_path))
+        vis_image, vis_pose_results = pose_model.process_single(im)
+
+        json_data = _conduct_label_json(vis_pose_results, image_path)
+
+        # save json_data
+        bname_wo_ext = os.path.splitext(os.path.basename(path))[0]
+        json_out_path = os.path.join(output_dir, "%s.json" % bname_wo_ext)
+        json.dump(json_data, open(json_out_path, 'w'), indent=2)
+
+        print ('\t>finished json for base name: %s' % bname_wo_ext)
 
 if __name__ == '__main__':
     from PIL import Image
 
     #
     config_path = "/home/kan/Desktop/cinnamon/kp_estimation/keypoint_estimation/experiments/hor01/hrnet/w48_384x288_adam_lr1e-3.yaml"
-    weight_path = "/home/kan/Desktop/final_state.pth"
+    weight_path = "/home/kan/Desktop/model_best.pth"
+
+
 
     #
     im_fn = "/home/kan/data/geek_data/PD/PD15_132_R_k_a_R/color/a0001.tga"
