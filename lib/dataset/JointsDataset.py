@@ -166,40 +166,57 @@ class JointsDataset(Dataset):
 
         use_augment_name = ''
         if random.uniform(0, 1.) < self.tps_prob:
-            tps_transform = TPSTransform(version='tps')
-            tps_transform.set_random_parameters(input_image=data_numpy.copy(), points_per_dim=self.tps_params['points_per_dim'],
-                                                scale_factor=self.tps_params['scale_factor'])
             use_augment_name = 'tps'
+            tps_transform = TPSTransform(version='tps')
 
-            input = tps_transform.transform_image(input_image=data_numpy.copy(), output_size=self.image_size,
-                                                  interpolation_mode='linear')
+            try_count = 0
+            while(try_count < 2):
+                tps_transform.set_random_parameters(input_image=data_numpy.copy(),
+                                                    points_per_dim=self.tps_params['points_per_dim'],
+                                                    scale_factor=self.tps_params['scale_factor'])
+                _is_valid = tps_transform.check_valid(input_image=data_numpy.copy(),
+                                          pose_xy_coords=[joints[i,0:2] for i in range(len(joints)) if joints_vis[i, 0] > 0.0],
+                                          output_size=self.image_size)
+                try_count += 1
 
-            joints_saved = deepcopy(joints)
-            for i in range(self.num_joints):
-                if joints_vis[i, 0] > 0.0:
-                    joint = joints[i]
-                    joint_ = tps_transform.transform_coordinate(xy_coords=[joint[0:2].tolist()],
-                                                                  input_image=data_numpy,
-                                                                  output_size=self.image_size,
-                                                                  interpolation_mode='nearest')
+                if _is_valid: break
+                else: tps_transform.params = None
 
-                    if joint_[0][0] == -1 and joint_[0][1] == -1:
-                        error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d%m%Y %H:%M:%S")))
-                        error_data = {
-                            'image_path': filename,
-                            'params': tps_transform.get_random_parameters(),
-                            'data_numpy': data_numpy,
-                            'point': joints[i]
-                        }
-                        cPickle.dump(error_data, open(error_data_path, mode='wb'))
-                        print('bug in TPS >>> saved in %s ...' % error_data_path)
+            if tps_transform.params is None:
+                # set params back to None and run another augmentation
+                use_augment_name = ''
+            else:
+                input = tps_transform.transform_image(input_image=data_numpy.copy(), output_size=self.image_size,
+                                                      interpolation_mode='linear')
 
-                        use_augment_name = ''
-                        joints = joints_saved
-                        break
+                joints_saved = deepcopy(joints)
+                for i in range(self.num_joints):
+                    if joints_vis[i, 0] > 0.0:
+                        joint = joints[i]
+                        joint_ = tps_transform.transform_coordinate(xy_coords=[joint[0:2].tolist()],
+                                                                      input_image=data_numpy,
+                                                                      output_size=self.image_size,
+                                                                      interpolation_mode='nearest')
 
-                    joints[i, 0:2] = joint_[0]
+                        # we don't need this line anymore because of the appearance of check_valid function.
+                        if joint_[0][0] == -1 and joint_[0][1] == -1:
+                            use_augment_name = ''
+                            error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d%m%Y_%H:%M:%S")))
+                            error_data = {
+                                'image_path': filename,
+                                'params': tps_transform.get_random_parameters(),
+                                'data_numpy': data_numpy,
+                                'point': joints[i]
+                            }
+                            cPickle.dump(error_data, open(error_data_path, mode='wb'))
+                            logger.warning('bug in TPS >>> saved in %s ...' % error_data_path)
 
+                            joints = joints_saved
+                            break
+
+                        joints[i, 0:2] = joint_[0]
+
+            ### for tps visualizing (if any)
             if True and use_augment_name == 'tps':
                 # visualize here
                 vis_org_image = data_numpy.copy()

@@ -2,6 +2,7 @@ import os, sys
 sys.path.append(os.path.dirname(__file__))
 import numpy as np
 import cv2
+from skimage.measure import label
 from warp_image import warp_images
 from augment.core import CoreTransform
 import matplotlib.pyplot as plt
@@ -9,13 +10,14 @@ def imshow(im):
     plt.imshow(im)
     plt.show()
 
-def _get_regular_grid(image, points_per_dim):
+def _get_regular_grid(image, points_per_dim, min_ratio=0.15, max_ratio=0.85):
+    min_ratio = np.clip(min_ratio, 0., 0.2)
+    max_ratio = np.clip(max_ratio, 0.8, 1.)
     nrows, ncols = image.shape[0], image.shape[1]
-    rows = np.linspace(0, nrows, points_per_dim)
-    cols = np.linspace(0, ncols, points_per_dim)
+    rows = np.linspace(int(min_ratio * nrows), int((nrows) * max_ratio) - 1, points_per_dim)
+    cols = np.linspace(int(min_ratio * ncols), int((ncols) * max_ratio) - 1, points_per_dim)
     rows, cols = np.meshgrid(rows, cols)
     return np.dstack([cols.flat, rows.flat])[0]
-
 
 def _generate_random_vectors(image, src_points, scale):
     dst_pts = src_points + np.random.uniform(-scale, scale, src_points.shape)
@@ -89,19 +91,34 @@ class TPSTransform(CoreTransform):
         super(TPSTransform, self).__init__()
         self.version = version
 
+    def check_valid(self, input_image, pose_xy_coords, output_size):
+        h, w = input_image.shape[:2]
+        before_mask = np.zeros(shape=(h,w), dtype=np.uint8)
+
+        g_count = 1
+        for x, y in pose_xy_coords:
+            x = int(x); y = int(y)
+            before_mask[y, x] = g_count
+            cv2.circle(before_mask, (x, y), radius=3, color=g_count, thickness=3)
+            g_count += 1
+
+        before_mask = np.stack([before_mask, before_mask, before_mask], axis=-1)
+        after_mask  = self.transform_image(before_mask, output_size, interpolation_mode='nearest')
+        after_mask  = after_mask[:,:,0]
+
+        n_unique_numbers = np.unique(after_mask.flatten())
+        if (len(n_unique_numbers) - 1) != len(pose_xy_coords):
+            return False
+
+        return True
+
     def set_random_parameters(self, input_image, points_per_dim=3, scale_factor=0.1, **kwargs):
         h, w = input_image.shape[:2]
         src_points = _get_regular_grid(input_image, points_per_dim)
         dst_points = _generate_random_vectors(input_image, src_points, scale=scale_factor * min(w,h))
-
-        src_points[:, 0] = np.clip(src_points[:, 0], a_min=5., a_max=w - 5)
-        src_points[:, 1] = np.clip(src_points[:, 1], a_min=5., a_max=h - 5)
-        dst_points[:, 0] = np.clip(dst_points[:, 0], a_min=5., a_max=w - 5)
-        dst_points[:, 1] = np.clip(dst_points[:, 1], a_min=5., a_max=h - 5)
-
         arugments = {
             'points_per_dim': points_per_dim,
-            'scale': scale_factor * w,
+            'scale': scale_factor * min(w,h),
             'src_points': src_points,
             'dst_points': dst_points
         }
@@ -127,7 +144,6 @@ class TPSTransform(CoreTransform):
             g_id += 1
 
         out_mask = self.transform_image(mask, output_size, 'nearest')
-        #imshow(out_mask)
 
         #
         output_points = []
@@ -184,10 +200,10 @@ def test_pickle(pickle_path):
     data_numpy = error_data['data_numpy']
     params = error_data['params']
     h, w = data_numpy.shape[:2]
-    params['src_points'][:,0] = np.clip(params['src_points'][:,0], a_min=5., a_max=w-5)
-    params['src_points'][:,1] = np.clip(params['src_points'][:,1], a_min=5., a_max=h-5)
-    params['dst_points'][:, 0] = np.clip(params['dst_points'][:, 0], a_min=5., a_max=w-5)
-    params['dst_points'][:, 1] = np.clip(params['dst_points'][:, 1], a_min=5., a_max=h-5)
+    # params['src_points'][:,0] = np.clip(params['src_points'][:,0], a_min=5., a_max=w-5)
+    # params['src_points'][:,1] = np.clip(params['src_points'][:,1], a_min=5., a_max=h-5)
+    # params['dst_points'][:, 0] = np.clip(params['dst_points'][:, 0], a_min=5., a_max=w-5)
+    # params['dst_points'][:, 1] = np.clip(params['dst_points'][:, 1], a_min=5., a_max=h-5)
 
 
     tps_transform = TPSTransform(version='tps')
@@ -200,11 +216,20 @@ def test_pickle(pickle_path):
     imshow(data_numpy)
     imshow(augment_image)
 
+    fixed_src_points = [[225, 218]]
+    is_valid = tps_transform.check_valid(data_numpy, fixed_src_points, output_size=output_size)
+    print ('is_valid:', is_valid)
+    augment_keypoints = tps_transform.transform_coordinate(xy_coords=fixed_src_points, input_image=data_numpy,
+                                                           output_size=output_size, interpolation_mode='nearest')
+
+    print ('src:', fixed_src_points)
+    print ('dst:', augment_keypoints)
+
 if __name__ == '__main__':
     import cv2
     import numpy as np
 
-    pickle_path = "/home/kan/Desktop/17032021 09:59:02.pkl"
+    pickle_path = "/home/kan/Desktop/17032021 12:14:48.pkl"
     test_pickle(pickle_path=pickle_path)
 
     image_path = "/home/kan/Desktop/cinnamon/CharacterGAN/datasets/hor02_037_C/C/output/C0001.png"
@@ -213,11 +238,11 @@ if __name__ == '__main__':
     image = cPickle.load(open(pickle_path, 'rb'))['data_numpy']
     h, w = image.shape[:2]
     output_size = (512, 768)
-    fixed_src_points = np.array([[100, 75], [80, 108]]) # xy coordinates
+    fixed_src_points = np.array([[525, 418]]) # xy coordinates
 
     #
     tps_transform = TPSTransform(version='tps')
-    tps_transform.set_random_parameters(input_image=image, points_per_dim=3, scale_factor=0.1)
+    tps_transform.set_random_parameters(input_image=image, points_per_dim=4, scale_factor=0.1)
 
     augment_image = tps_transform.transform_image(input_image=image, output_size=output_size, interpolation_mode='linear')
     print ('original,', image.shape)
