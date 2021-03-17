@@ -182,12 +182,13 @@ class JointsDataset(Dataset):
                                                                   input_image=data_numpy,
                                                                   output_size=self.image_size,
                                                                   interpolation_mode='nearest')
-                    joints[i, 0:2] = joint_[0]
+
                     if joint_[0][0] == -1 and joint_[0][1] == -1:
                         error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d%m%Y %H:%M:%S")))
                         error_data = {
                             'params': tps_transform.get_random_parameters(),
-                            'data_numpy': data_numpy
+                            'data_numpy': data_numpy,
+                            'point': joints[i]
                         }
                         cPickle.dump(error_data, open(error_data_path, mode='wb'))
                         print('bug in TPS >>> saved in %s ...' % error_data_path)
@@ -195,6 +196,8 @@ class JointsDataset(Dataset):
                         use_augment_name = ''
                         joints = joints_saved
                         break
+
+                    joints[i, 0:2] = joint_[0]
 
             if True and use_augment_name == 'tps':
                 # visualize here
