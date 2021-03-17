@@ -92,7 +92,13 @@ class TPSTransform(CoreTransform):
     def set_random_parameters(self, input_image, points_per_dim=3, scale_factor=0.1, **kwargs):
         h, w = input_image.shape[:2]
         src_points = _get_regular_grid(input_image, points_per_dim)
-        dst_points = _generate_random_vectors(input_image, src_points, scale=scale_factor * min(w, h))
+        dst_points = _generate_random_vectors(input_image, src_points, scale=scale_factor * min(w,h))
+
+        src_points[:, 0] = np.clip(src_points[:, 0], a_min=5., a_max=w - 5)
+        src_points[:, 1] = np.clip(src_points[:, 1], a_min=5., a_max=h - 5)
+        dst_points[:, 0] = np.clip(dst_points[:, 0], a_min=5., a_max=w - 5)
+        dst_points[:, 1] = np.clip(dst_points[:, 1], a_min=5., a_max=h - 5)
+
         arugments = {
             'points_per_dim': points_per_dim,
             'scale': scale_factor * w,
@@ -175,16 +181,21 @@ import _pickle as cPickle
 def test_pickle(pickle_path):
     error_data = cPickle.load(open(pickle_path, 'rb'))
 
-
     data_numpy = error_data['data_numpy']
     params = error_data['params']
+    h, w = data_numpy.shape[:2]
+    params['src_points'][:,0] = np.clip(params['src_points'][:,0], a_min=5., a_max=w-5)
+    params['src_points'][:,1] = np.clip(params['src_points'][:,1], a_min=5., a_max=h-5)
+    params['dst_points'][:, 0] = np.clip(params['dst_points'][:, 0], a_min=5., a_max=w-5)
+    params['dst_points'][:, 1] = np.clip(params['dst_points'][:, 1], a_min=5., a_max=h-5)
+
 
     tps_transform = TPSTransform(version='tps')
     tps_transform.params = params
 
     output_size = (512, 768)  # (w,h)
     expected_output_size = (data_numpy.shape[1], data_numpy.shape[0])
-    augment_image = tps_transform.transform_image(input_image=data_numpy, output_size=expected_output_size, interpolation_mode='linear')
+    augment_image = tps_transform.transform_image(input_image=data_numpy, output_size=output_size, interpolation_mode='linear')
 
     imshow(data_numpy)
     imshow(augment_image)
@@ -193,11 +204,13 @@ if __name__ == '__main__':
     import cv2
     import numpy as np
 
-    test_pickle(pickle_path="/home/kan/Desktop/download.pkl")
+    pickle_path = "/home/kan/Desktop/17032021 09:59:02.pkl"
+    test_pickle(pickle_path=pickle_path)
 
     image_path = "/home/kan/Desktop/cinnamon/CharacterGAN/datasets/hor02_037_C/C/output/C0001.png"
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cPickle.load(open(pickle_path, 'rb'))['data_numpy']
     h, w = image.shape[:2]
     output_size = (512, 768)
     fixed_src_points = np.array([[100, 75], [80, 108]]) # xy coordinates
