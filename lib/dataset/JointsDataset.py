@@ -184,7 +184,7 @@ class JointsDataset(Dataset):
                                                                   interpolation_mode='nearest')
                     joints[i, 0:2] = joint_[0]
                     if joint_[0][0] == -1 and joint_[0][1] == -1:
-                        error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+                        error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d%m%Y %H:%M:%S")))
                         error_data = {
                             'params': tps_transform.get_random_parameters(),
                             'data_numpy': data_numpy
