@@ -92,7 +92,7 @@ class TPSTransform(CoreTransform):
     def set_random_parameters(self, input_image, points_per_dim=3, scale_factor=0.1, **kwargs):
         h, w = input_image.shape[:2]
         src_points = _get_regular_grid(input_image, points_per_dim)
-        dst_points = _generate_random_vectors(input_image, src_points, scale=scale_factor * w)
+        dst_points = _generate_random_vectors(input_image, src_points, scale=scale_factor * min(w, h))
         arugments = {
             'points_per_dim': points_per_dim,
             'scale': scale_factor * w,
@@ -171,10 +171,29 @@ class TPSTransform(CoreTransform):
         #
         return ou_est_img
 
+import _pickle as cPickle
+def test_pickle(pickle_path):
+    error_data = cPickle.load(open(pickle_path, 'rb'))
+
+
+    data_numpy = error_data['data_numpy']
+    params = error_data['params']
+
+    tps_transform = TPSTransform(version='tps')
+    tps_transform.params = params
+
+    output_size = (512, 768)  # (w,h)
+    expected_output_size = (data_numpy.shape[1], data_numpy.shape[0])
+    augment_image = tps_transform.transform_image(input_image=data_numpy, output_size=expected_output_size, interpolation_mode='linear')
+
+    imshow(data_numpy)
+    imshow(augment_image)
 
 if __name__ == '__main__':
     import cv2
     import numpy as np
+
+    test_pickle(pickle_path="/home/kan/Desktop/download.pkl")
 
     image_path = "/home/kan/Desktop/cinnamon/CharacterGAN/datasets/hor02_037_C/C/output/C0001.png"
     image = cv2.imread(image_path)

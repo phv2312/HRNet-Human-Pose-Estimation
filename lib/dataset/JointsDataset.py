@@ -186,6 +186,7 @@ class JointsDataset(Dataset):
                     if joint_[0][0] == -1 and joint_[0][1] == -1:
                         error_data_path = os.path.join(self.tps_debug_dir, "%s.pkl" % (datetime.now().strftime("%d%m%Y %H:%M:%S")))
                         error_data = {
+                            'image_path': filename,
                             'params': tps_transform.get_random_parameters(),
                             'data_numpy': data_numpy,
                             'point': joints[i]
