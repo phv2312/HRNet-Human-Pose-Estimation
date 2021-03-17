@@ -170,13 +170,17 @@ class JointsDataset(Dataset):
             tps_transform = TPSTransform(version='tps')
 
             try_count = 0
-            while(try_count < 2):
+            while(try_count < 1):
                 tps_transform.set_random_parameters(input_image=data_numpy.copy(),
                                                     points_per_dim=self.tps_params['points_per_dim'],
                                                     scale_factor=self.tps_params['scale_factor'])
-                _is_valid = tps_transform.check_valid(input_image=data_numpy.copy(),
-                                          pose_xy_coords=[joints[i,0:2] for i in range(len(joints)) if joints_vis[i, 0] > 0.0],
-                                          output_size=self.image_size)
+                try:
+                    _is_valid = tps_transform.check_valid(input_image=data_numpy.copy(),
+                                              pose_xy_coords=[joints[i,0:2] for i in range(len(joints)) if joints_vis[i, 0] > 0.0],
+                                              output_size=self.image_size)
+                except:
+                    _is_valid = False
+
                 try_count += 1
 
                 if _is_valid: break
