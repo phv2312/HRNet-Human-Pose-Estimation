@@ -189,6 +189,9 @@ class JointsDataset(Dataset):
                 input = tps_transform.transform_image(input_image=data_numpy.copy(), output_size=self.image_size,
                                                       interpolation_mode='linear')
 
+                if self.transform:
+                    input = self.transform(input)
+
                 joints_saved = deepcopy(joints)
                 for i in range(self.num_joints):
                     if joints_vis[i, 0] > 0.0:
@@ -215,25 +218,22 @@ class JointsDataset(Dataset):
                             break
 
                         joints[i, 0:2] = joint_[0]
-
-            ### for tps visualizing (if any)
-            if True and use_augment_name == 'tps':
-                # visualize here
-                vis_org_image = data_numpy.copy()
-                vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))
-                vis_out_image = input.copy()
-                for i in range(self.num_joints):
-                    if joints_vis[i, 0] > 0.0:
-                        x, y = joints[i, 0:2]
-                        x = int(x); y = int(y);
-                        cv2.circle(vis_out_image, (x, y), radius=2, color=(255, 0, 0), thickness=2)
-                concat_image = np.concatenate([vis_org_image, vis_out_image], axis=1)
-
-                import matplotlib.pyplot as plt
-                plt.imshow(concat_image); plt.show()
-
-            if self.transform:
-                input = self.transform(input)
+            #
+            # ### for tps visualizing (if any)
+            # if True and use_augment_name == 'tps':
+            #     # visualize here
+            #     vis_org_image = data_numpy.copy()
+            #     vis_org_image = cv2.resize(vis_org_image, dsize=tuple(self.image_size))
+            #     vis_out_image = input.copy()
+            #     for i in range(self.num_joints):
+            #         if joints_vis[i, 0] > 0.0:
+            #             x, y = joints[i, 0:2]
+            #             x = int(x); y = int(y);
+            #             cv2.circle(vis_out_image, (x, y), radius=2, color=(255, 0, 0), thickness=2)
+            #     concat_image = np.concatenate([vis_org_image, vis_out_image], axis=1)
+            #
+            #     import matplotlib.pyplot as plt
+            #     plt.imshow(concat_image); plt.show()
 
         if use_augment_name != 'tps':
             if self.is_train:
