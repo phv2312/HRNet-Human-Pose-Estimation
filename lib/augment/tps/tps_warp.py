@@ -98,9 +98,11 @@ class TPSTransform(CoreTransform):
         g_count = 1
         for x, y in pose_xy_coords:
             x = int(x); y = int(y)
-            before_mask[y, x] = g_count
-            cv2.circle(before_mask, (x, y), radius=3, color=g_count, thickness=3)
-            g_count += 1
+
+            if 0 <= x < w and 0 <= y < h: # if the pose is label outside of image
+                before_mask[y, x] = g_count
+                cv2.circle(before_mask, (x, y), radius=2, color=g_count, thickness=2)
+                g_count += 1
 
         before_mask = np.stack([before_mask, before_mask, before_mask], axis=-1)
         after_mask  = self.transform_image(before_mask, output_size, interpolation_mode='nearest')
@@ -193,6 +195,91 @@ class TPSTransform(CoreTransform):
         #
         return ou_est_img
 
+def augment_tps(np_image, xy_keypoint_coords):
+    tps_transform = TPSTransform(version='tps')
+    h, w = np_image.shape[:2]
+
+    try_count = 0
+    max_try = 2
+    while try_count < max_try:
+        tps_transform.set_random_parameters(input_image=np_image, points_per_dim=3, scale_factor=0.1)
+
+        _is_valid = tps_transform.check_valid(input_image=np_image, pose_xy_coords=xy_keypoint_coords,
+                                              output_size=(w,h))
+        if _is_valid:
+            break
+        else:
+            tps_transform.params = None
+
+        try_count += 1
+
+    if tps_transform.params is not None:
+        new_image   = tps_transform.transform_image(np_image, output_size=(w,h), interpolation_mode='linear')
+        new_coords  = tps_transform.transform_coordinate(xy_keypoint_coords, input_image=np_image, output_size=(w,h),
+                                                        interpolation_mode='nearest')
+        return (new_image, new_coords)
+
+    else:
+        return None
+
+import glob, json
+from copy import deepcopy
+def create_more_dir_with_tps(input_dir, output_dir):
+    dir_names = os.listdir(input_dir)
+    for dir_name in dir_names:
+        _in_dir = os.path.join(input_dir, dir_name)
+        if not os.path.isdir(_in_dir): continue
+
+        json_dir = os.path.join(_in_dir, 'labels_v1')
+        image_dir = os.path.join(_in_dir, 'images')
+        json_out_dir = os.path.join(output_dir, dir_name, 'labels_v1'); os.makedirs(json_out_dir, exist_ok=True)
+        image_out_dir = os.path.join(output_dir, dir_name, 'images'); os.makedirs(image_out_dir, exist_ok=True)
+
+        all_image_paths =   list(glob.glob(os.path.join(image_dir, '*.png'))) + \
+                            list(glob.glob(os.path.join(image_dir, '*.jpg')))
+
+        for image_path in all_image_paths:
+            print (image_path)
+            bname = os.path.basename(image_path)
+            bname_wo_ext = os.path.splitext(bname)[0]
+
+            corres_json_path = os.path.join(json_dir, "%s.json" % bname_wo_ext)
+            if os.path.exists(corres_json_path):
+                #
+                im = cv2.imread(image_path)
+                im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+
+                #
+                json_data = json.load(open(corres_json_path, 'r'))
+                key_point_coords = [x['points'][0] for x in json_data['shapes']]
+                key_point_names  = [x['label'] for x in json_data['shapes']]
+
+                new_result = augment_tps(im, key_point_coords)
+                if new_result is None:
+                    print ('> Can not TPS for %s -> skip' % bname_wo_ext)
+                    continue
+
+                new_image, new_coords = new_result
+                assert len(new_coords) == len(key_point_coords)
+
+                out_json_data = deepcopy(json_data)
+                for _i, (x, y) in enumerate(new_coords):
+                    x = int(x)
+                    y = int(y)
+                    out_json_data['shapes'][_i]['points'] = [[x, y]]
+                    #cv2.circle(new_image, center=(x,y), radius=2, color=(255,0,0), thickness=2)
+
+                #vis_image = np.concatenate([im, new_image], axis=1)
+                #imshow(vis_image)
+                #exit()
+
+                out_image_path = os.path.join(image_out_dir, '%s.png' % bname_wo_ext)
+                out_json_path = os.path.join(json_out_dir, '%s.json' % bname_wo_ext)
+
+                cv2.imwrite(out_image_path, cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB))
+                json.dump(out_json_data, open(out_json_path, 'w'), indent=4)
+
+
 import _pickle as cPickle
 def test_pickle(pickle_path):
     error_data = cPickle.load(open(pickle_path, 'rb'))
@@ -216,7 +303,7 @@ def test_pickle(pickle_path):
     imshow(data_numpy)
     imshow(augment_image)
 
-    fixed_src_points = [[225, 218]]
+    fixed_src_points = [error_data['point'][0:2].astype(np.int).tolist()] #[[225, 218]]
     is_valid = tps_transform.check_valid(data_numpy, fixed_src_points, output_size=output_size)
     print ('is_valid:', is_valid)
     augment_keypoints = tps_transform.transform_coordinate(xy_coords=fixed_src_points, input_image=data_numpy,
@@ -225,24 +312,34 @@ def test_pickle(pickle_path):
     print ('src:', fixed_src_points)
     print ('dst:', augment_keypoints)
 
+
+
 if __name__ == '__main__':
+    input_dir  = "/home/kan/data/geek_data/AnimeDrawing_Geek/Combine"
+    output_dir = "/home/kan/data/geek_data/AnimeDrawing_Geek/Combine_Augment"
+
+    create_more_dir_with_tps(input_dir, output_dir)
+    exit()
+    #
+
     import cv2
     import numpy as np
 
-    pickle_path = "/home/kan/Desktop/17032021 12:14:48.pkl"
-    test_pickle(pickle_path=pickle_path)
+    pickle_path = "/home/kan/Desktop/19032021_11:57:00.pkl"
+    #test_pickle(pickle_path=pickle_path)
 
     image_path = "/home/kan/Desktop/cinnamon/CharacterGAN/datasets/hor02_037_C/C/output/C0001.png"
+    output_size = (512, 768)
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = cPickle.load(open(pickle_path, 'rb'))['data_numpy']
+    image = cv2.resize(image, output_size, interpolation=cv2.INTER_CUBIC)
     h, w = image.shape[:2]
-    output_size = (512, 768)
-    fixed_src_points = np.array([[525, 418]]) # xy coordinates
+
+    fixed_src_points = np.array([[500, 418]]) # xy coordinates
 
     #
     tps_transform = TPSTransform(version='tps')
-    tps_transform.set_random_parameters(input_image=image, points_per_dim=4, scale_factor=0.1)
+    tps_transform.set_random_parameters(input_image=image, points_per_dim=3, scale_factor=0.1)
 
     augment_image = tps_transform.transform_image(input_image=image, output_size=output_size, interpolation_mode='linear')
     print ('original,', image.shape)
