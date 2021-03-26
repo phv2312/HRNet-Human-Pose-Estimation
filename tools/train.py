@@ -135,7 +135,6 @@ def main():
     shutil.copy2(
         os.path.join(this_dir, '../lib/models', cfg.MODEL.NAME + '.py'),
         final_output_dir)
-    # logger.info(pprint.pformat(model))
 
     writer_dict = {
         'writer': SummaryWriter(log_dir=tb_log_dir),
@@ -224,15 +223,14 @@ def main():
         train(cfg, train_loader, model, criterion, optimizer, epoch,
               final_output_dir, tb_log_dir, writer_dict)
 
-
         # evaluate on validation set
-        # perf_indicator = validate(
-        #     cfg, valid_loader, valid_dataset, model, criterion,
-        #     final_output_dir, tb_log_dir, writer_dict
-        # )
-        perf_indicator = best_perf
+        perf_indicator = validate(
+            cfg, valid_loader, valid_dataset, model, criterion,
+            final_output_dir, tb_log_dir, writer_dict
+        )
 
         if perf_indicator >= best_perf:
+            logger.info('=> new winner, new: %.3f, old: %.3f' % (perf_indicator, best_perf))
             best_perf = perf_indicator
             best_model = True
         else:

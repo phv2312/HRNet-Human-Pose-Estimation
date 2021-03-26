@@ -88,7 +88,10 @@ class MPIIDataset(JointsDataset):
             c = np.array(a['center'], dtype=np.float)
             #what is scale factor used for ? Ans: scale = original_height / 200
 
-            s = np.array(a['scale'], dtype=np.float)
+            if type(a['scale']) is not list: # only 1 dimension
+                s = np.array([a['scale'], a['scale']], dtype=np.float)
+            else:
+                s = np.array(a['scale'], dtype=np.float)
 
             # Adjust center/scale slightly to avoid cropping limbs
             if c[0] != -1:

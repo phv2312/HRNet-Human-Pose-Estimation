@@ -22,7 +22,7 @@ def calc_dists(preds, target, normalize):
             if target[n, c, 0] > 1 and target[n, c, 1] > 1:
                 normed_preds = preds[n, c, :] / normalize[n]
                 normed_targets = target[n, c, :] / normalize[n]
-                dists[c, n] = np.linalg.norm(normed_preds - normed_targets)
+                dists[c, n] = np.linalg.norm(normed_preds - normed_targets, ord=2)
             else:
                 dists[c, n] = -1
     return dists
@@ -60,7 +60,7 @@ def accuracy(output, target, hm_type='gaussian', thr=0.5):
     cnt = 0
 
     for i in range(len(idx)):
-        acc[i + 1] = dist_acc(dists[idx[i]])
+        acc[i + 1] = dist_acc(dists[idx[i]], thr)
         if acc[i + 1] >= 0:
             avg_acc = avg_acc + acc[i + 1]
             cnt += 1

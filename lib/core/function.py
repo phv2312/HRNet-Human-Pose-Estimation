@@ -22,7 +22,7 @@ from utils.vis import save_debug_images
 
 
 logger = logging.getLogger(__name__)
-
+THRE = 0.2
 
 def train(config, train_loader, model, criterion, optimizer, epoch,
           output_dir, tb_log_dir, writer_dict):
@@ -53,8 +53,6 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             output = outputs
             loss = criterion(output, target, target_weight)
 
-        # loss = criterion(output, target, target_weight)
-
         # compute gradient and do update step
         optimizer.zero_grad()
         loss.backward()
@@ -64,7 +62,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         losses.update(loss.item(), input.size(0))
 
         _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         target.detach().cpu().numpy())
+                                         target.detach().cpu().numpy(), thr=THRE)
         acc.update(avg_acc, cnt)
 
         # measure elapsed time
@@ -77,10 +75,10 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
                   'Speed {speed:.1f} samples/s\t' \
                   'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)\t' \
                   'Loss {loss.val:.5f} ({loss.avg:.5f})\t' \
-                  'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
+                  'PCK@{thr:.2f} {acc.val:.3f} ({acc.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
                       speed=input.size(0)/batch_time.val,
-                      data_time=data_time, loss=losses, acc=acc)
+                      data_time=data_time, loss=losses, acc=acc, thr=THRE)
             logger.info(msg)
 
             writer = writer_dict['writer']
@@ -113,6 +111,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     filenames = []
     imgnums = []
     idx = 0
+    thr = 0.2
     with torch.no_grad():
         end = time.time()
         for i, (input, target, target_weight, meta) in enumerate(val_loader):
@@ -156,7 +155,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
             _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
-                                             target.cpu().numpy())
+                                             target.cpu().numpy(), thr=thr)
 
             acc.update(avg_acc, cnt)
 
@@ -186,8 +185,8 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 msg = 'Test: [{0}/{1}]\t' \
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' \
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t' \
-                      'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
-                          i, len(val_loader), batch_time=batch_time,
+                      'PCK@{thr:.2f} {acc.val:.3f} ({acc.avg:.3f})'.format(
+                          i, len(val_loader), thr=thr, batch_time=batch_time,
                           loss=losses, acc=acc)
                 logger.info(msg)
 
@@ -197,17 +196,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 save_debug_images(config, input, meta, target, pred*4, output,
                                   prefix)
 
-        name_values, perf_indicator = val_dataset.evaluate(
-            config, all_preds, output_dir, all_boxes, image_path,
-            filenames, imgnums
-        )
-
-        model_name = config.MODEL.NAME
-        if isinstance(name_values, list):
-            for name_value in name_values:
-                _print_name_value(name_value, model_name)
-        else:
-            _print_name_value(name_values, model_name)
+        perf_indicator = acc.avg
 
         if writer_dict:
             writer = writer_dict['writer']
@@ -222,22 +211,9 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 acc.avg,
                 global_steps
             )
-            if isinstance(name_values, list):
-                for name_value in name_values:
-                    writer.add_scalars(
-                        'valid',
-                        dict(name_value),
-                        global_steps
-                    )
-            else:
-                writer.add_scalars(
-                    'valid',
-                    dict(name_values),
-                    global_steps
-                )
             writer_dict['valid_global_steps'] = global_steps + 1
 
-    return perf_indicator
+    return  perf_indicator
 
 
 # markdown format output
