@@ -165,7 +165,7 @@ class JointsDataset(Dataset):
         """
 
         use_augment_name = ''
-        if random.uniform(0, 1.) < self.tps_prob:
+        if random.uniform(0, 1.) < self.tps_prob and self.is_train is True:
             use_augment_name = 'tps'
             tps_transform = TPSTransform(version='tps')
 
